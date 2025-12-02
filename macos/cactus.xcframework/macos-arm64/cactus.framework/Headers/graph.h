@@ -28,10 +28,11 @@ enum class OpType {
     INPUT, PRECISION_CAST,
     ADD, ADD_CLIPPED, SUBTRACT, MULTIPLY, DIVIDE,
     MATMUL, TRANSPOSE, RESHAPE, SLICE, GATHER, EMBEDDING,
+    BILINEAR_INTERPOLATION,
     SUM, MEAN, VARIANCE, MIN, MAX,
-    RMS_NORM, ROPE, SOFTMAX, ATTENTION, CONV1D_CAUSAL,
+    RMS_NORM, ROPE, SOFTMAX, ATTENTION, CONV1D_CAUSAL, CONV1D_K3,
     SCALAR_ADD, SCALAR_SUBTRACT, SCALAR_MULTIPLY, SCALAR_DIVIDE, SCALAR_EXP, SCALAR_SQRT, SCALAR_COS, SCALAR_SIN,
-    SILU, GELU,
+    SILU, GELU, GELU_ERF,
     SAMPLE, CONCAT,
     SCATTER_TOPK,
     TOPK, LAYERNORM,
@@ -91,9 +92,11 @@ struct TensorConfig {
 struct BroadcastInfo {
     std::vector<size_t> output_shape;
     bool needs_broadcasting;
-    
+
     static BroadcastInfo compute(const std::vector<size_t>& lhs, const std::vector<size_t>& rhs);
 };
+
+class BufferPool;
 
 struct BufferDesc {
     std::vector<size_t> shape;
@@ -101,22 +104,32 @@ struct BufferDesc {
     size_t byte_size;
     std::unique_ptr<char[]> data;
     void* external_data;
+    char* pooled_data;
     Precision precision;
     float quantization_scale;
-    
+
     BufferDesc();
     BufferDesc(const std::vector<size_t>& s, Precision prec = Precision::INT8, float scale = 1.0f);
-    
+    ~BufferDesc();
+
+    BufferDesc(BufferDesc&& other) noexcept;
+    BufferDesc& operator=(BufferDesc&& other) noexcept;
+
+    BufferDesc(const BufferDesc&) = delete;
+    BufferDesc& operator=(const BufferDesc&) = delete;
+
     void* get_data();
     const void* get_data() const;
-    
+
     template<typename T>
     T* data_as() { return static_cast<T*>(get_data()); }
-    
+
     template<typename T>
     const T* data_as() const { return static_cast<const T*>(get_data()); }
-    
+
     void allocate();
+    void allocate_from_pool(BufferPool& pool);
+    void release_to_pool(BufferPool& pool);
     void set_external(void* ptr);
 };
 
@@ -139,6 +152,7 @@ struct OpParams {
     ComputeBackend backend = ComputeBackend::CPU;
 
     size_t dilation = 1;
+    size_t stride = 1;
     float temperature = 1.0f;
     float top_p = 1.0f;
     size_t top_k = 0;
@@ -146,6 +160,8 @@ struct OpParams {
     
     size_t index_value = 0;  // For INDEX operation
     size_t num_classes = 0;  // For scatter operations
+    size_t dst_height = 0;
+    size_t dst_width = 0;   
 };
 
 struct GraphNode {
@@ -177,6 +193,33 @@ void compute_topk_node(GraphNode& node, const std::vector<std::unique_ptr<GraphN
 void compute_layernorm_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 void compute_index_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map);
 
+void shrink_thread_local_buffers();
+
+class BufferPool {
+public:
+    BufferPool() = default;
+    ~BufferPool() = default;
+
+    BufferPool(const BufferPool&) = delete;
+    BufferPool& operator=(const BufferPool&) = delete;
+
+    char* acquire(size_t byte_size);
+    void release(char* ptr, size_t byte_size);
+    void clear();
+
+    size_t active_bytes() const { return active_bytes_; }
+    size_t pool_bytes() const { return pool_bytes_; }
+    size_t peak_bytes() const { return peak_bytes_; }
+
+private:
+    std::unordered_map<size_t, std::vector<std::unique_ptr<char[]>>> free_buffers_;
+    size_t active_bytes_ = 0;
+    size_t pool_bytes_ = 0;
+    size_t peak_bytes_ = 0;
+
+    size_t round_up_size(size_t size) const;
+};
+
 namespace ValidationUtils {
     void validate_tensor_dims(const std::vector<size_t>& shape, size_t required_dims, const std::string& op_name);
     void validate_precision(Precision actual, Precision required, const std::string& op_name);
@@ -187,6 +230,12 @@ namespace ValidationUtils {
 class CactusGraph {
 public:
     CactusGraph();
+
+    struct DebugNodeEntry {
+        uint32_t layer_idx;
+        std::string name;
+        size_t node_id;
+    };
     
     size_t input(const std::vector<size_t>& shape, Precision precision = Precision::INT8);
     size_t precision_cast(size_t input, Precision target_precision);
@@ -209,9 +258,11 @@ public:
     
     size_t silu(size_t input);
     size_t gelu(size_t input);
+    size_t gelu_erf(size_t input);
     
     size_t matmul(size_t input1, size_t input2, bool pretransposed_rhs = false, ComputeBackend backend = ComputeBackend::CPU);
     size_t transpose(size_t input, ComputeBackend backend = ComputeBackend::CPU);
+    size_t transposeN(size_t input, const std::vector<size_t>& permutation, ComputeBackend backend = ComputeBackend::CPU);
     size_t reshape(size_t input, const std::vector<size_t>& new_shape);
     size_t slice(size_t input, int axis, size_t start, size_t length);
     size_t index(size_t input, size_t index_value, int dim);
@@ -225,9 +276,11 @@ public:
     size_t gather(size_t embeddings, size_t indices);
     size_t mmap_embeddings(const std::string& filename);
     size_t mmap_weights(const std::string& filename);
+    size_t load_weights(const std::string& filename); 
     void set_quantization_scale(size_t node_id, float scale);
     size_t embedding(const std::string& filename, size_t indices);
     size_t embedding(size_t embedding_tensor, size_t indices);
+    size_t bilinear_interpolation(size_t pos_embeds, size_t dst_height, size_t dst_width);
 
     size_t layernorm(size_t input, size_t weight, size_t bias, float epsilon = 1e-5f);
     size_t topk(size_t input, size_t k);
@@ -239,6 +292,7 @@ public:
     size_t attention(size_t query, size_t key, size_t value, float scale, size_t position_offset, size_t window_size, ComputeBackend backend = ComputeBackend::CPU);
 
     size_t conv1d_causal(size_t input, size_t weight, size_t kernel_size, size_t dilation = 1);
+    size_t conv1d_k3(size_t input, size_t weight, size_t stride);
     
     size_t sample(size_t logits, float temperature = 0.6f, float top_p = 0.95f, size_t top_k = 20);
     
@@ -252,6 +306,11 @@ public:
     void execute(const std::string& profile_file = "");
     void hard_reset();
     void soft_reset();
+
+    void register_debug_node(uint32_t layer_idx, const std::string& name, size_t node_id);
+    void capture_debug_node(uint32_t layer_idx, const std::string& name, size_t node_id);
+    const std::vector<DebugNodeEntry>& get_debug_nodes() const;
+    void clear_debug_nodes();
     
     size_t add_node(OpType op_type, const std::vector<size_t>& inputs, const std::vector<size_t>& output_shape, const OpParams& params = {});
     const BufferDesc& get_output_buffer(size_t node_id) const;
@@ -265,6 +324,8 @@ private:
     size_t next_node_id_;
     std::vector<std::unique_ptr<GraphFile::MappedFile>> mapped_files_;
     std::unordered_map<std::string, size_t> weight_cache_;
+    std::vector<DebugNodeEntry> debug_nodes_;
+    BufferPool buffer_pool_;
 };
 
 

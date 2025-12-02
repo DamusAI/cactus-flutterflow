@@ -17,9 +17,19 @@ flutter pub add cactus
 ## Getting Started
 
 ### Telemetry Setup (Optional)
+
+Telemetry is enabled by default to help improve the SDK. You can easily disable it:
+
 ```dart
 import 'package:cactus/cactus.dart';
 
+// Disable telemetry
+CactusTelemetry.isTelemetryEnabled = false;
+```
+
+You can also optionally set a telemetry token to track usage across your organization:
+
+```dart
 CactusTelemetry.setTelemetryToken("your-token-here");
 ```
 
@@ -100,7 +110,7 @@ Future<void> streamingExample() async {
 }
 ```
 
-### Function Calling (Experimental)
+### Function Calling
 ```dart
 Future<void> functionCallingExample() async {
   final lm = CactusLM();
@@ -136,7 +146,7 @@ Future<void> functionCallingExample() async {
 }
 ```
 
-### Tool Filtering (Experimental)
+### Tool Filtering
 
 When working with many tools, you can use tool filtering to automatically select the most relevant tools for each query. This reduces context size and improves model performance. Tool filtering is **enabled by default** and works automatically when you provide tools to `generateCompletion()` or `generateCompletionStream()`.
 
@@ -273,6 +283,39 @@ Future<void> fetchModelsExample() async {
 }
 ```
 
+## Vision (Multimodal)
+
+The `CactusLM` class supports vision-capable models that can analyze images. You can pass images alongside text messages to get AI-powered image descriptions and analysis.
+
+```dart
+Future<void> streamingVisionExample() async {
+  final lm = CactusLM();
+  await lm.initializeModel(params: CactusInitParams(model: 'lfm2-vl-450m'));
+
+  // Stream the image analysis response
+  final streamedResult = await lm.generateCompletionStream(
+    messages: [
+      ChatMessage(
+        content: 'You are a helpful AI assistant that can analyze images.',
+        role: "system"
+      ),
+      ChatMessage(
+        content: 'What objects can you see in this image?',
+        role: "user",
+        images: ['/path/to/image.jpg']
+      )
+    ],
+    params: CactusCompletionParams(maxTokens: 200)
+  );
+
+  // Process streaming output
+  await for (final chunk in streamedResult.stream) {
+    print(chunk);
+  }
+  lm.unload();
+}
+```
+
 ### Default Parameters
 The `CactusLM` class provides sensible defaults for completion parameters:
 - `maxTokens: 200` - Maximum tokens to generate
@@ -295,7 +338,7 @@ The `CactusLM` class provides sensible defaults for completion parameters:
 #### Data Classes
 - `CactusInitParams({String model = "qwen3-0.6", int? contextSize = 2048})` - Model initialization parameters
 - `CactusCompletionParams({String? model, double? temperature, int? topK, double? topP, int maxTokens = 200, List<String> stopSequences = ["<|im_end|>", "<end_of_turn>"], List<CactusTool>? tools, CompletionMode completionMode = CompletionMode.local, String? cactusToken})` - Completion parameters
-- `ChatMessage({required String content, required String role, int? timestamp})` - Chat message format
+- `ChatMessage({required String content, required String role, int? timestamp, List<String> images})` - Chat message format
 - `CactusCompletionResult({required bool success, required String response, required double timeToFirstTokenMs, required double totalTimeMs, required double tokensPerSecond, required int prefillTokens, required int decodeTokens, required int totalTokens, List<ToolCall> toolCalls = []})` - Contains response, timing metrics, tool calls, and success status
 - `CactusStreamedCompletionResult({required Stream<String> stream, required Future<CactusCompletionResult> result})` - Contains the stream and the final result of a streamed completion.
 - `CactusModel({required DateTime createdAt, required String slug, required String downloadUrl, required int sizeMb, required bool supportsToolCalling, required bool supportsVision, required String name, bool isDownloaded = false, int quantization = 8})` - Model information
@@ -355,26 +398,19 @@ Future<void> embeddingExample() async {
 
 ## Speech-to-Text (STT)
 
-The `CactusSTT` class provides high-quality local speech recognition capabilities with support for multiple transcription providers. It supports multiple languages and runs entirely on-device for privacy and offline functionality.
-
-**Available Providers:**
-- **Whisper**: OpenAI's robust speech recognition model (default)
+The `CactusSTT` class provides high-quality local speech recognition capabilities powered by Whisper. It supports multiple languages and runs entirely on-device for privacy and offline functionality.
 
 ### Basic Usage
 ```dart
 import 'package:cactus/cactus.dart';
 
 Future<void> sttExample() async {
-  // Create STT instance with default provider (Whisper)
   final stt = CactusSTT();
-
-  // Or explicitly choose Whisper provider
-  // final stt = CactusSTT(provider: TranscriptionProvider.whisper);
 
   try {
     // Download a voice model with progress callback
-    // Default model: "whisper-tiny"
-    await stt.download(
+    await stt.downloadModel(
+      model: "whisper-tiny",
       downloadProcessCallback: (progress, status, isError) {
         if (isError) {
           print("Download error: $status");
@@ -385,95 +421,110 @@ Future<void> sttExample() async {
     );
 
     // Initialize the speech recognition model
-    // Default model: "whisper-tiny"
-    await stt.init(model: "whisper-tiny");
+    await stt.initializeModel(params: CactusInitParams(model: "whisper-tiny"));
 
-    // Transcribe audio (from microphone or file)
-    final result = await stt.transcribe();
+    // Transcribe audio from file
+    final result = await stt.transcribe(
+      audioFilePath: "/path/to/audio/file.wav",
+    );
 
-    if (result != null && result.success) {
+    if (result.success) {
       print("Transcribed text: ${result.text}");
-      print("Processing time: ${result.processingTime}ms");
-      print("Provider: ${stt.provider}");
+      print("Time to first token: ${result.timeToFirstTokenMs}ms");
+      print("Total time: ${result.totalTimeMs}ms");
+      print("Tokens per second: ${result.tokensPerSecond}");
+    } else {
+      print("Transcription failed: ${result.errorMessage}");
     }
   } finally {
     // Clean up
-    stt.dispose();
+    stt.unload();
   }
+}
+```
+
+### Streaming Transcription
+```dart
+Future<void> streamingTranscriptionExample() async {
+  final stt = CactusSTT();
+
+  await stt.downloadModel(model: "whisper-tiny");
+  await stt.initializeModel(params: CactusInitParams(model: "whisper-tiny"));
+
+  // Get streaming transcription result
+  final streamedResult = await stt.transcribeStream(
+    audioFilePath: "/path/to/audio/file.wav",
+  );
+
+  // Process streaming output token by token
+  await for (final token in streamedResult.stream) {
+    print(token);
+  }
+
+  // Get the final result with timing metrics
+  final finalResult = await streamedResult.result;
+  if (finalResult.success) {
+    print("Final transcription: ${finalResult.text}");
+    print("Tokens per second: ${finalResult.tokensPerSecond}");
+  }
+
+  stt.unload();
 }
 ```
 
 ### Using Different Whisper Models
 ```dart
 Future<void> whisperModelsExample() async {
-  // Whisper provider with different model sizes
   // Smaller models are faster, larger models are more accurate
 
   // Tiny model - Fastest, good for real-time
-  final tinySTT = CactusSTT(provider: TranscriptionProvider.whisper);
-  await tinySTT.download(model: "whisper-tiny");
-  await tinySTT.init(model: "whisper-tiny");
+  final tinySTT = CactusSTT();
+  await tinySTT.downloadModel(model: "whisper-tiny");
+  await tinySTT.initializeModel(params: CactusInitParams(model: "whisper-tiny"));
+
+  final result1 = await tinySTT.transcribe(
+    audioFilePath: "/path/to/audio.wav"
+  );
+  print("Tiny model result: ${result1.text}");
+  tinySTT.unload();
 
   // Base model - More accurate, slightly slower
-  final baseSTT = CactusSTT(provider: TranscriptionProvider.whisper);
-  await baseSTT.download(model: "whisper-base");
-  await baseSTT.init(model: "whisper-base");
+  final baseSTT = CactusSTT();
+  await baseSTT.downloadModel(model: "whisper-base");
+  await baseSTT.initializeModel(params: CactusInitParams(model: "whisper-base"));
 
-  // Use the appropriate model for your use case
-  final result1 = await tinySTT.transcribe();
-  final result2 = await baseSTT.transcribe();
-
-  print("Tiny model result: ${result1?.text}");
-  print("Base model result: ${result2?.text}");
-
-  tinySTT.dispose();
-  baseSTT.dispose();
-}
-```
-
-### Transcribing Audio Files
-```dart
-Future<void> fileTranscriptionExample() async {
-  final stt = CactusSTT();
-
-  await stt.download(model: "whisper-tiny");
-  await stt.init(model: "whisper-tiny");
-
-  // Transcribe from an audio file
-  final result = await stt.transcribe(
-    filePath: "/path/to/audio/file.wav"
+  final result2 = await baseSTT.transcribe(
+    audioFilePath: "/path/to/audio.wav"
   );
-
-  if (result != null && result.success) {
-    print("File transcription: ${result.text}");
-  }
-
-  stt.dispose();
+  print("Base model result: ${result2.text}");
+  baseSTT.unload();
 }
 ```
 
-### Custom Speech Recognition Parameters
+### Custom Transcription Parameters
 ```dart
 Future<void> customParametersExample() async {
   final stt = CactusSTT();
 
-  await stt.download(model: "whisper-tiny");
-  await stt.init(model: "whisper-tiny");
+  await stt.downloadModel(model: "whisper-tiny");
+  await stt.initializeModel(params: CactusInitParams(model: "whisper-tiny"));
 
-  // Configure custom speech recognition parameters
-  final params = SpeechRecognitionParams(
-    sampleRate: 16000,           // Audio sample rate (Hz)
-    maxDuration: 30000,          // Maximum recording duration (ms)
-    model: "whisper-tiny",       // Optional: specify model
+  // Configure custom transcription parameters
+  final params = CactusTranscriptionParams(
+    maxTokens: 4096,
+    stopSequences: ["<|startoftranscript|>"],
   );
 
-  final result = await stt.transcribe(params: params);
+  final result = await stt.transcribe(
+    audioFilePath: "/path/to/audio/file.wav",
+    params: params,
+  );
 
-  if (result != null && result.success) {
+  if (result.success) {
     print("Custom transcription: ${result.text}");
   }
 
-  stt.dispose();
+  stt.unload();
 }
 ```
 
@@ -481,13 +532,12 @@ Future<void> customParametersExample() async {
 ```dart
 Future<void> fetchVoiceModelsExample() async {
   final stt = CactusSTT();
-  
+
   // Get list of available voice models
   final models = await stt.getVoiceModels();
-  
+
   for (final model in models) {
     print("Model: ${model.slug}");
-    print("Language: ${model.language}");
     print("Size: ${model.sizeMb} MB");
     print("File name: ${model.fileName}");
     print("Downloaded: ${model.isDownloaded}");
@@ -496,60 +546,30 @@ Future<void> fetchVoiceModelsExample() async {
 }
 ```
 
-### Real-time Speech Recognition Status
-```dart
-Future<void> realTimeStatusExample() async {
-  final stt = CactusSTT();
-
-  await stt.download(model: "whisper-tiny");
-  await stt.init(model: "whisper-tiny");
-
-  // Start transcription
-  final transcriptionFuture = stt.transcribe();
-
-  // Check recording status
-  while (stt.isRecording) {
-    print("Currently recording...");
-    await Future.delayed(Duration(milliseconds: 100));
-  }
-
-  // Stop recording manually if needed
-  stt.stop();
-
-  final result = await transcriptionFuture;
-  print("Final result: ${result?.text}");
-
-  stt.dispose();
-}
-```
-
 ### Default Parameters
-The `CactusSTT` class uses sensible defaults for speech recognition:
-- `provider: TranscriptionProvider.whisper` - Default transcription provider
-- `model: "whisper-tiny"` - Default Whisper model
-- `sampleRate: 16000` - Standard sample rate for speech recognition
-- `maxDuration: 30000` - Maximum 30 seconds recording time
+The `CactusSTT` class uses sensible defaults:
+- Default initialization parameters match `CactusInitParams` (context size: 2048)
+- Default transcription parameters: `maxTokens: 2048`, `stopSequences: ["<|startoftranscript|>"]`
+- Default Whisper prompt: `<|startoftranscript|><|en|><|transcribe|><|notimestamps|>`
 
 ### STT API Reference
 
 #### CactusSTT Class
-- `CactusSTT({TranscriptionProvider provider = TranscriptionProvider.whisper})` - Constructor with optional provider selection
-- `TranscriptionProvider get provider` - Get the current transcription provider
-- `Future<bool> download({String model = "", CactusProgressCallback? downloadProcessCallback})` - Download a voice model with optional progress callback (default: "whisper-tiny")
-- `Future<bool> init({required String model})` - Initialize speech recognition model (required model parameter)
-- `Future<SpeechRecognitionResult?> transcribe({SpeechRecognitionParams? params, String? filePath})` - Transcribe speech from microphone or file
-- `void stop()` - Stop current recording session
-- `bool get isRecording` - Check if currently recording
-- `bool isReady()` - Check if model is initialized and ready
-- `Future<List<VoiceModel>> getVoiceModels()` - Fetch available voice models
-- `Future<bool> isModelDownloaded({required String modelName})` - Check if a specific model is downloaded
-- `void dispose()` - Clean up resources and free memory
+- `CactusSTT()` - Constructor
+- `Future<void> downloadModel({required String model, CactusProgressCallback? downloadProcessCallback})` - Download a voice model (e.g., "whisper-tiny", "whisper-base")
+- `Future<void> initializeModel({CactusInitParams? params})` - Initialize speech recognition model (uses last initialized model if params not provided)
+- `Future<CactusTranscriptionResult> transcribe({required String audioFilePath, String prompt = whisperPrompt, CactusTranscriptionParams? params})` - Transcribe audio from file path
+- `Future<CactusStreamedTranscriptionResult> transcribeStream({required String audioFilePath, String prompt = whisperPrompt, CactusTranscriptionParams? params})` - Stream transcription token by token
+- `void unload()` - Free model from memory
+- `bool isLoaded()` - Check if model is loaded
+- `Future<List<VoiceModel>> getVoiceModels()` - Fetch available voice models with caching
 
 #### STT Data Classes
-- `TranscriptionProvider` - Enum for choosing transcription provider (`whisper`)
-- `SpeechRecognitionParams({int sampleRate = 16000, int maxDuration = 30000, String? model})` - Speech recognition configuration
-- `SpeechRecognitionResult({required bool success, required String text, double? processingTime})` - Transcription result with timing information
-- `VoiceModel({required DateTime createdAt, required String slug, required String language, required String url, required int sizeMb, required String fileName, bool isDownloaded = false})` - Voice model information
+- `CactusInitParams({String model = "qwen3-0.6", int? contextSize = 2048})` - Model initialization parameters (reused from LLM API)
+- `CactusTranscriptionParams({int maxTokens = 2048, List<String> stopSequences = ["<|startoftranscript|>"]})` - Transcription parameters
+- `CactusTranscriptionResult({required bool success, required String text, double timeToFirstTokenMs = 0.0, double totalTimeMs = 0.0, double tokensPerSecond = 0.0, String? errorMessage})` - Transcription result with timing metrics
+- `CactusStreamedTranscriptionResult({required Stream<String> stream, required Future<CactusTranscriptionResult> result})` - Contains the token stream and the final transcription result
+- `VoiceModel({required DateTime createdAt, required String slug, required String downloadUrl, required int sizeMb, required String fileName, bool isDownloaded = false})` - Voice model information
 - `CactusProgressCallback = void Function(double? progress, String statusMessage, bool isError)` - Progress callback for model downloads
 
 ## Retrieval-Augmented Generation (RAG)
@@ -691,6 +711,7 @@ Check out the example app in the `example/` directory for a complete Flutter imp
 - Model discovery and fetching available models
 - Model downloading with real-time progress indicators
 - Text completion with both regular and streaming modes
+- Vision/multimodal image analysis (`example/lib/pages/vision.dart`)
 - Speech-to-text transcription with Whisper
 - Voice model management and provider switching
 - Embedding generation
