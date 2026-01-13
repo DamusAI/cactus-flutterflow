@@ -102,14 +102,18 @@ void cactus_matmul_f32(const float* a, const float* b_transposed, float* c,
                        size_t M, size_t K, size_t N);
 
 
-void cactus_transpose_2d_int8(const int8_t* source, int8_t* destination, 
+void cactus_transpose_2d_int8(const int8_t* source, int8_t* destination,
                                size_t num_rows, size_t num_cols, size_t start_row, size_t end_row);
-void cactus_transpose_2d_f32(const float* source, float* destination, 
+void cactus_transpose_2d_f16(const __fp16* source, __fp16* destination,
+                             size_t num_rows, size_t num_cols, size_t start_row, size_t end_row);
+void cactus_transpose_2d_f32(const float* source, float* destination,
                              size_t num_rows, size_t num_cols, size_t start_row, size_t end_row);
 
-void cactus_transpose_int8(const int8_t* source, int8_t* destination, const size_t* shape, 
+void cactus_transpose_int8(const int8_t* source, int8_t* destination, const size_t* shape,
                            const size_t* permutation, size_t ndim, size_t start_idx, size_t end_idx);
-void cactus_transpose_f32(const float* source, float* destination, const size_t* shape, 
+void cactus_transpose_f16(const __fp16* source, __fp16* destination, const size_t* shape,
+                          const size_t* permutation, size_t ndim, size_t start_idx, size_t end_idx);
+void cactus_transpose_f32(const float* source, float* destination, const size_t* shape,
                           const size_t* permutation, size_t ndim, size_t start_idx, size_t end_idx);
 
 int64_t cactus_sum_all_int8(const int8_t* data, size_t num_elements);
@@ -174,6 +178,15 @@ void cactus_gelu_f16(const __fp16* input, __fp16* output, size_t num_elements);
 void cactus_gelu_int8(const int8_t* input, int8_t* output, size_t num_elements,
                       float input_scale, float output_scale);
 
+void cactus_gelu_f32_erf(const float* input, float* output, size_t num_elements);
+void cactus_gelu_f16_erf(const __fp16* input, __fp16* output, size_t num_elements);
+void cactus_gelu_int8_erf(
+    const int8_t* input,
+    int8_t* output,
+    size_t num_elements,
+    float scale_in,
+    float scale_out);
+
                       
 void cactus_attention_int8(const int8_t* queries, const int8_t* keys, const int8_t* values, int8_t* output,
                             size_t batch_size, size_t seq_len, size_t kv_seq_len, size_t num_q_heads, size_t num_kv_heads,
@@ -225,10 +238,57 @@ void cactus_conv1d_causal_depthwise_int8(
     float weight_scale,
     float output_scale);
 
+void cactus_conv1d_f32_k3(
+    const float* input,
+    const float* weight,
+    float* output,
+    size_t N,
+    size_t L,
+    size_t C_in,
+    size_t C_out,
+    size_t stride
+);
+
+void cactus_conv1d_f16_k3(
+    const __fp16* input,
+    const __fp16* weight,
+    __fp16* output,
+    size_t N,
+    size_t L,
+    size_t C_in,
+    size_t C_out,
+    size_t stride
+);
+
+void cactus_conv1d_f32_k3(
+    const float* input,
+    const float* weight,
+    float* output,
+    size_t N, size_t L,
+    size_t C_in, size_t C_out,
+    size_t stride
+);
+
+void cactus_conv1d_f16_k3(
+    const __fp16* input,
+    const __fp16* weight,
+    __fp16* output,
+    size_t N, size_t L,
+    size_t C_in, size_t C_out,
+    size_t stride
+);
+
+void cactus_bilinear_interpolation_fp32(const float* input, float* output, size_t src_height, size_t src_width, size_t embed_dim,
+                                        size_t dst_height, size_t dst_width);
+
 void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
-                       float temperature, float top_p, size_t top_k, size_t random_seed);
+                       float temperature, float top_p, size_t top_k, size_t random_seed,
+                       const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
+                       size_t bias_count = 0);
 void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size,
-                       float temperature, float top_p, size_t top_k, size_t random_seed);
+                       float temperature, float top_p, size_t top_k, size_t random_seed,
+                       const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
+                       size_t bias_count = 0);
 
 
 void cactus_concat_f32(const float* input1, const float* input2, float* output,

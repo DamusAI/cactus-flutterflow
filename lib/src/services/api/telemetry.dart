@@ -31,7 +31,7 @@ class Telemetry {
       debugPrint('Failed to get device ID, registering device...');
       try {
         final deviceData = await getDeviceMetadata();
-        return await Supabase.registerDevice(deviceData);
+        return await Supabase.registerDevice(deviceData: deviceData);
       } catch (e) {
         return null;
       }
@@ -86,18 +86,18 @@ class Telemetry {
   }
 
   Future<void> logTranscription(
-    CactusCompletionResult? result,
+    CactusTranscriptionResult? result,
     String model, {
     String? message,
-    double? responseTime
+    bool? success
   }) async {
     final record = LogRecord(
       eventType: 'transcription',
       projectId: projectId,
       deviceId: deviceId,
-      responseTime: responseTime,
+      responseTime: result?.totalTimeMs,
       model: model,
-      success: result?.success,
+      success: success ?? result?.success,
       telemetryToken: cactusTelemetryToken,
       message: message,
       audioDuration: result?.totalTimeMs.toInt()

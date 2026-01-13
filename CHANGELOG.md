@@ -1,3 +1,23 @@
+## v1.3.0
+- Renamed `CactusTelemetry` to `CactusConfig` for configuration APIs
+- Added `CactusConfig.setProKey()` to enable NPU acceleration
+- Added `forceTools` parameter to `CactusCompletionParams` for forcing tool calling output
+
+## v1.2.1
+- Added `reset()` method to `CactusLM` and `CactusSTT` classes for clearing context without unloading models
+- Added `audioStream` parameter support in `CactusSTT` transcription methods for streaming audio input
+- Enhanced transcription methods to support both file path and audio stream inputs
+
+## v1.2.0
+- Move to cactus whisper
+- Memory optimizations
+- Sync binaries with latest cactus engine
+
+## v1.0.2
+
+- Synced binaries with the latest Cactus engine
+- Added support for vision on LFM2 models
+
 ## v1.0.1
 
 - Synced binaries with the latest Cactus engine
