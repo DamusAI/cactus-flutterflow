@@ -4,30 +4,42 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
+
 	<key>CFBundleExecutable</key>
 	<string>cactus_util</string>
+
 	<key>CFBundleIconFile</key>
 	<string></string>
+
 	<key>CFBundleIdentifier</key>
 	<string>com.cactus.util</string>
+
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+
 	<key>CFBundleName</key>
 	<string></string>
+
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
+
 	<key>CFBundleSignature</key>
 	<string>????</string>
+
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+
 	<key>CFBundleVersion</key>
 	<string>1.0.0</string>
+
 	<key>MinimumOSVersion</key>
 	<string>15.0</string>
+
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>iPhoneOS</string>
 	</array>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+
 	<key>CSResourcesFileMapped</key>
 	<true/>
 </dict>
