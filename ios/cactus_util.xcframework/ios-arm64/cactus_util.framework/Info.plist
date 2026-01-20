@@ -22,6 +22,10 @@
 	<string>1.0.0</string>
 	<key>MinimumOSVersion</key>
 	<string>15.0</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>iPhoneOS</string>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CSResourcesFileMapped</key>
